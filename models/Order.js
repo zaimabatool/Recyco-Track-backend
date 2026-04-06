@@ -67,6 +67,11 @@ const orderSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    riderId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
+    },
 
     // Negotiation fields
     finalWeight: { type: Number },

@@ -62,6 +62,12 @@ export const getAllOrders = async (req, res) => {
             filter.status = status;
         }
 
+        // If user is a rider, only show assigned orders
+        if (req.user.role === 'rider') {
+            filter.riderId = req.user._id;
+            filter.status = { $in: ['Scheduled', 'Price Proposed', 'Price Accepted'] };
+        }
+
         const orders = await Order.find(filter)
             .populate('userId', 'name email phone')
             .sort({ date: -1 });
@@ -122,12 +128,12 @@ export const updateOrderStatus = async (req, res) => {
  */
 export const schedulePickup = async (req, res) => {
     try {
-        const { startDate, endDate, startTime, endTime } = req.body;
+        const { startDate, endDate, startTime, endTime, riderId } = req.body;
 
-        if (!startDate || !endDate || !startTime || !endTime) {
+        if (!startDate || !endDate || !startTime || !endTime || !riderId) {
             return res.status(400).json({
                 success: false,
-                message: 'startDate, endDate, startTime, and endTime are required'
+                message: 'startDate, endDate, startTime, endTime, and riderId are required'
             });
         }
 
@@ -143,6 +149,7 @@ export const schedulePickup = async (req, res) => {
 
         order.status = 'Scheduled';
         order.pickupTime = pickupTime;
+        order.riderId = riderId;
         await order.save();
 
         res.json({

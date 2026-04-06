@@ -148,3 +148,73 @@ export const rejectProposal = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 };
+
+/**
+ * @desc    Cancel an order
+ * @route   PUT /api/orders/:id/cancel
+ * @access  Private (User)
+ */
+export const cancelOrder = async (req, res) => {
+    try {
+        const order = await Order.findById(req.params.id);
+
+        if (!order) {
+            return res.status(404).json({ success: false, message: 'Order not found' });
+        }
+
+        // Verify the order belongs to the current user
+        if (order.userId.toString() !== req.user._id.toString()) {
+            return res.status(403).json({ success: false, message: 'Not authorized to cancel this order' });
+        }
+
+        if (order.status === 'Cancelled') {
+            return res.status(400).json({ success: false, message: 'Order is already cancelled' });
+        }
+
+        if (order.status === 'Completed' || order.status === 'Price Proposed' || order.status === 'Price Accepted') {
+            return res.status(400).json({ success: false, message: `Cannot cancel an order in ${order.status} status` });
+        }
+
+        if (order.status === 'Scheduled' && order.pickupTime) {
+            // Parse pickupTime. Example: "Nov 20 - Nov 20, 14:00 to 16:00"
+            const parts = order.pickupTime.split(',');
+            if (parts.length >= 2) {
+                const dateRange = parts[0].trim(); // "Nov 20 - Nov 20"
+                const timeStr = parts[1].trim(); // "14:00 to 16:00"
+                
+                const startDateStr = dateRange.split('-')[0].trim(); // "Nov 20"
+                const startTimeStr = timeStr.split('to')[0].trim(); // "14:00"
+
+                if (startDateStr && startTimeStr) {
+                    const currentYear = new Date().getFullYear();
+                    const scheduledDate = new Date(`${startDateStr} ${currentYear} ${startTimeStr}`);
+
+                    // Handle potential year rollover if parsing yields a date far in the past
+                    if (new Date().getTime() - scheduledDate.getTime() > 1000 * 60 * 60 * 24 * 180) {
+                        scheduledDate.setFullYear(currentYear + 1);
+                    }
+
+                    const hoursUntilPickup = (scheduledDate.getTime() - new Date().getTime()) / (1000 * 60 * 60);
+
+                    if (hoursUntilPickup < 5) {
+                        return res.status(400).json({ 
+                            success: false, 
+                            message: 'Cancellation window closed. Orders cannot be cancelled less than 5 hours before scheduled pickup.' 
+                        });
+                    }
+                }
+            }
+        }
+
+        order.status = 'Cancelled';
+        await order.save();
+
+        res.json({
+            success: true,
+            order: { ...order.toObject(), id: order._id },
+            message: 'Order cancelled successfully'
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
