@@ -7,6 +7,7 @@ const orderItemSchema = new mongoose.Schema({
     unit: { type: String, default: 'kg' },
     price: { type: Number },
     confidence: { type: Number },
+    quality: { type: String },
     category: { type: String }
 }, { _id: false });
 
