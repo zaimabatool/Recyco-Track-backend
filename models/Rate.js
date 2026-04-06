@@ -33,6 +33,11 @@ const rateSchema = new mongoose.Schema({
     iconColor: {
         type: String,
         default: 'text-gray-500'
+    },
+    minGrade: {
+        type: String,
+        enum: ['Premium', 'A Grade', 'B Grade', 'Standard', 'Poor'],
+        default: 'Poor'
     }
 }, {
     timestamps: true

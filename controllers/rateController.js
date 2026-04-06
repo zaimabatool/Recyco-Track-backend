@@ -68,17 +68,18 @@ export const getRateById = async (req, res) => {
  */
 export const createRate = async (req, res) => {
     try {
-        const { material, category, unit, price, trend, iconType, iconColor } = req.body;
-
-        const rate = await Rate.create({
-            material,
-            category,
-            unit: unit || 'kg',
-            price,
-            trend: trend || 'stable',
-            iconType: iconType || 'GiMetalBar',
-            iconColor: iconColor || 'text-gray-500'
-        });
+        const { material, category, unit, price, trend, iconType, iconColor, minGrade } = req.body;
+ 
+         const rate = await Rate.create({
+             material,
+             category,
+             unit: unit || 'kg',
+             price,
+             trend: trend || 'stable',
+             iconType: iconType || 'GiMetalBar',
+             iconColor: iconColor || 'text-gray-500',
+             minGrade: minGrade || 'Poor'
+         });
 
         res.status(201).json({
             success: true,

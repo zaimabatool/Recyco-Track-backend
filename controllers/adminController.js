@@ -289,3 +289,244 @@ export const getHistory = async (req, res) => {
         res.status(500).json({ success: false, message: error.message });
     }
 };
+/**
+ * @desc    Get all riders
+ * @route   GET /api/admin/riders
+ * @access  Admin
+ */
+export const getRiders = async (req, res) => {
+    try {
+        const riders = await User.find({ role: 'rider' }).select('-password').sort({ createdAt: -1 });
+
+        res.json({
+            success: true,
+            count: riders.length,
+            riders: riders.map(r => ({ ...r.toObject(), id: r._id }))
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Create a new rider
+ * @route   POST /api/admin/riders
+ * @access  Admin
+ */
+export const createRider = async (req, res) => {
+    try {
+        const { name, email, password, phone } = req.body;
+
+        if (!name || !email || !password) {
+            return res.status(400).json({
+                success: false,
+                message: 'Name, email, and password are required'
+            });
+        }
+
+        const userExists = await User.findOne({ email });
+        if (userExists) {
+            return res.status(400).json({
+                success: false,
+                message: 'User already exists with this email'
+            });
+        }
+
+        const rider = await User.create({
+            name,
+            email,
+            password,
+            phone: phone || '',
+            role: 'rider'
+        });
+
+        res.status(201).json({
+            success: true,
+            rider: { ...rider.toObject(), id: rider._id }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Delete a rider
+ * @route   DELETE /api/admin/riders/:id
+ * @access  Admin
+ */
+export const deleteRider = async (req, res) => {
+    try {
+        const rider = await User.findById(req.params.id);
+
+        if (!rider || rider.role !== 'rider') {
+            return res.status(404).json({ success: false, message: 'Rider not found' });
+        }
+
+        await User.findByIdAndDelete(req.params.id);
+
+        res.json({
+            success: true,
+            message: 'Rider account deleted successfully'
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+/**
+ * @desc    Update a rider
+ * @route   PUT /api/admin/riders/:id
+ * @access  Admin
+ */
+export const updateRider = async (req, res) => {
+    try {
+        const { name, email, phone, password } = req.body;
+        const rider = await User.findById(req.params.id);
+
+        if (!rider || rider.role !== 'rider') {
+            return res.status(404).json({ success: false, message: 'Rider not found' });
+        }
+
+        // Check if email is already taken by another user
+        if (email && email !== rider.email) {
+            const userExists = await User.findOne({ email });
+            if (userExists) {
+                return res.status(400).json({ success: false, message: 'User already exists with this email' });
+            }
+            rider.email = email;
+        }
+
+        if (name) rider.name = name;
+        if (phone !== undefined) rider.phone = phone;
+        if (password) rider.password = password;
+
+        await rider.save();
+
+        res.json({
+            success: true,
+            rider: { ...rider.toObject(), id: rider._id }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Get all regular users (customers)
+ * @route   GET /api/admin/users
+ * @access  Admin
+ */
+export const getUsers = async (req, res) => {
+    try {
+        const users = await User.find({ role: 'user' }).select('-password').sort({ createdAt: -1 });
+
+        res.json({
+            success: true,
+            count: users.length,
+            users: users.map(u => ({ ...u.toObject(), id: u._id }))
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Create a new customer user
+ * @route   POST /api/admin/users
+ * @access  Admin
+ */
+export const createUser = async (req, res) => {
+    try {
+        const { name, email, password, phone } = req.body;
+
+        if (!name || !email || !password) {
+            return res.status(400).json({
+                success: false,
+                message: 'Name, email, and password are required'
+            });
+        }
+
+        const userExists = await User.findOne({ email });
+        if (userExists) {
+            return res.status(400).json({
+                success: false,
+                message: 'User already exists with this email'
+            });
+        }
+
+        const user = await User.create({
+            name,
+            email,
+            password,
+            phone: phone || '',
+            role: 'user'
+        });
+
+        res.status(201).json({
+            success: true,
+            user: { ...user.toObject(), id: user._id }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Update a customer user
+ * @route   PUT /api/admin/users/:id
+ * @access  Admin
+ */
+export const updateUser = async (req, res) => {
+    try {
+        const { name, email, phone, password } = req.body;
+        const user = await User.findById(req.params.id);
+
+        if (!user || user.role !== 'user') {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        if (email && email !== user.email) {
+            const emailExists = await User.findOne({ email });
+            if (emailExists) {
+                return res.status(400).json({ success: false, message: 'Email already in use' });
+            }
+            user.email = email;
+        }
+
+        if (name) user.name = name;
+        if (phone !== undefined) user.phone = phone;
+        if (password) user.password = password;
+
+        await user.save();
+
+        res.json({
+            success: true,
+            user: { ...user.toObject(), id: user._id }
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};
+
+/**
+ * @desc    Delete a customer user
+ * @route   DELETE /api/admin/users/:id
+ * @access  Admin
+ */
+export const deleteUser = async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id);
+
+        if (!user || user.role !== 'user') {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        await User.findByIdAndDelete(req.params.id);
+
+        res.json({
+            success: true,
+            message: 'User account deleted successfully'
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+};

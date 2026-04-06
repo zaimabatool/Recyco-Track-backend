@@ -1,6 +1,9 @@
+import dotenv from 'dotenv';
+// Load env variables at the very top
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import connectDB from './config/db.js';
 
 // Route Imports
@@ -9,6 +12,7 @@ import rateRoutes from './routes/rateRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import contactRoutes from './routes/contactRoutes.js';
+import aiRoutes from './routes/aiRoutes.js';
 
 // Load env variables
 dotenv.config();
@@ -32,6 +36,7 @@ app.use('/api/rates', rateRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/contact', contactRoutes);
+app.use('/api/ai', aiRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

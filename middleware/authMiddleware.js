@@ -51,3 +51,17 @@ export const adminOnly = (req, res, next) => {
         });
     }
 };
+
+/**
+ * Staff-only middleware (Admin or Rider) - must be used AFTER protect middleware
+ */
+export const staffOnly = (req, res, next) => {
+    if (req.user && (req.user.role === 'admin' || req.user.role === 'rider')) {
+        next();
+    } else {
+        return res.status(403).json({
+            success: false,
+            message: 'Access denied. Staff privileges required.'
+        });
+    }
+};

@@ -8,12 +8,12 @@ import Counter from '../models/Counter.js';
  */
 export const createOrder = async (req, res) => {
     try {
-        const { materialName, weight, amount, paymentMethod, paymentDetails, items } = req.body;
+        const { materialName, customerPhone, weight, amount, paymentMethod, paymentDetails, items } = req.body;
 
-        if (!materialName || !weight || !amount || !paymentMethod) {
+        if (!materialName || !weight || !amount || !paymentMethod || !customerPhone) {
             return res.status(400).json({
                 success: false,
-                message: 'materialName, weight, amount, and paymentMethod are required'
+                message: 'materialName, weight, amount, customerPhone and paymentMethod are required'
             });
         }
 
@@ -28,6 +28,7 @@ export const createOrder = async (req, res) => {
             orderNumber: counter.seq,
             userId: req.user._id,
             customerName: req.user.name,
+            customerPhone,
             materialName,
             weight: parseFloat(weight),
             amount: parseFloat(amount),
