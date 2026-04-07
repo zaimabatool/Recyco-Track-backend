@@ -8,11 +8,11 @@ export const analyzeScrapImage = async (req, res) => {
         if (!process.env.GEMINI_API_KEY) {
             return res.status(500).json({ success: false, message: 'Gemini API key not configured in .env' });
         }
-        
+
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        
+
         let availableMaterials = req.body.availableMaterials;
-        
+
         // Parse if it's a JSON string from FormData
         if (typeof availableMaterials === 'string') {
             try {
@@ -40,8 +40,8 @@ export const analyzeScrapImage = async (req, res) => {
             },
         };
 
-        // Use gemini-3.1-flash-lite-preview as it has active availability during high demand periods
-        const model = genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite-preview" });
+        // Use gemini-2.5-flash-lite which has confirmed available quota on your key
+        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
         const prompt = `
             You are a scrap material expert for a recycling platform called RecycoTrack.
@@ -68,10 +68,29 @@ export const analyzeScrapImage = async (req, res) => {
             ]
         `;
 
-        const result = await model.generateContent([prompt, imagePart]);
-        const response = await result.response;
-        const text = response.text();
-        
+        // Function to call Gemini with retries for rate limits
+        const generateWithRetry = async (retries = 3, delay = 2000) => {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const result = await model.generateContent([prompt, imagePart]);
+                    const response = await result.response;
+                    return response.text();
+                } catch (err) {
+                    const isRateLimit = err.message.includes('429');
+                    const isLastRetry = i === retries - 1;
+                    
+                    if (isRateLimit && !isLastRetry) {
+                        console.warn(`Rate limit hit. Retrying in ${delay}ms... (Attempt ${i + 1}/${retries})`);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        continue;
+                    }
+                    throw err;
+                }
+            }
+        };
+
+        const text = await generateWithRetry();
+
         // Clean up the text (Gemini sometimes adds markdown code blocks)
         const jsonMatch = text.match(/\[[\s\S]*\]/);
         const analysisResults = JSON.parse(jsonMatch ? jsonMatch[0] : text);
@@ -83,9 +102,15 @@ export const analyzeScrapImage = async (req, res) => {
 
     } catch (error) {
         console.error('AI Analysis Error:', error.message);
-        res.status(500).json({
+        
+        let userFriendlyMsg = 'AI Analysis Failed';
+        if (error.message.includes('429')) {
+            userFriendlyMsg = 'AI Quota Exceeded. You are on the free tier. Please wait 1-2 minutes before trying again or decrease request frequency.';
+        }
+
+        res.status(error.message.includes('429') ? 429 : 500).json({
             success: false,
-            message: 'AI Analysis Failed',
+            message: userFriendlyMsg,
             error: error.message
         });
     } finally {
