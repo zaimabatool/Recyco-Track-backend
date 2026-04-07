@@ -1,48 +1,68 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import fs from 'fs';
+import path from 'path';
+
+// Helper to manage persistent state of the current API key index
+const STATE_FILE = path.join(process.cwd(), '.api_state.json');
+
+const getRotationState = () => {
+    try {
+        if (fs.existsSync(STATE_FILE)) {
+            return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+        }
+    } catch (err) {
+        console.error('Error reading rotation state:', err.message);
+    }
+    return { currentKeyIndex: 0 };
+};
+
+const saveRotationState = (index) => {
+    try {
+        fs.writeFileSync(STATE_FILE, JSON.stringify({ currentKeyIndex: index }));
+    } catch (err) {
+        console.error('Error saving rotation state:', err.message);
+    }
+};
+
+const getAvailableKeys = () => {
+    const keys = [];
+    let i = 1;
+    while (process.env[`GEMINI_API_KEY_${i}`]) {
+        keys.push(process.env[`GEMINI_API_KEY_${i}`]);
+        i++;
+    }
+    // Fallback to the single GEMINI_API_KEY if no numbered ones exist
+    if (keys.length === 0 && process.env.GEMINI_API_KEY) {
+        keys.push(process.env.GEMINI_API_KEY);
+    }
+    return keys;
+};
 
 // Initialize Gemini API
 export const analyzeScrapImage = async (req, res) => {
-    let availableMaterials = []; // Initialize outside try block for catch scope
+    let availableMaterials = [];
     try {
-        // Initialize Gemini API (Inside handler to ensure it has latest process.env)
-        if (!process.env.GEMINI_API_KEY) {
-            return res.status(500).json({ success: false, message: 'Gemini API key not configured in .env' });
+        const apiKeys = getAvailableKeys();
+        if (apiKeys.length === 0) {
+            return res.status(500).json({ success: false, message: 'No Gemini API keys configured in .env' });
         }
 
-        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
+        let { currentKeyIndex } = getRotationState();
         availableMaterials = req.body.availableMaterials;
 
-        // Parse if it's a JSON string from FormData
         if (typeof availableMaterials === 'string') {
-            try {
-                availableMaterials = JSON.parse(availableMaterials);
-            } catch (e) {
-                availableMaterials = [availableMaterials];
-            }
+            try { availableMaterials = JSON.parse(availableMaterials); } catch (e) { availableMaterials = [availableMaterials]; }
         }
-        const imageFile = req.file;
 
+        const imageFile = req.file;
         if (!imageFile) {
             return res.status(400).json({ success: false, message: 'No image provided' });
         }
 
-        if (!process.env.GEMINI_API_KEY) {
-            return res.status(500).json({ success: false, message: 'Gemini API key not configured' });
-        }
-
-        // Convert image to GoogleGenerativeAI.Part object
         const imageData = fs.readFileSync(imageFile.path);
         const imagePart = {
-            inlineData: {
-                data: imageData.toString('base64'),
-                mimeType: imageFile.mimetype,
-            },
+            inlineData: { data: imageData.toString('base64'), mimeType: imageFile.mimetype },
         };
-
-        // Using gemini-2.5-flash for high-quality analysis with your new API key
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
 
         const prompt = `
             You are a scrap material expert for a recycling platform called RecycoTrack.
@@ -69,78 +89,63 @@ export const analyzeScrapImage = async (req, res) => {
             ]
         `;
 
-        // Function to call Gemini with retries for rate limits
-        const generateWithRetry = async (retries = 3, delay = 2000) => {
-            for (let i = 0; i < retries; i++) {
-                try {
-                    const result = await model.generateContent([prompt, imagePart]);
-                    const response = await result.response;
-                    return response.text();
-                } catch (err) {
-                    const isRateLimit = err.message.includes('429');
-                    const isLastRetry = i === retries - 1;
+        // Strategy: Iterate through all keys starting from the last successful one
+        let analysisText = null;
+        let keysTried = 0;
 
-                    if (isRateLimit && !isLastRetry) {
-                        console.warn(`Rate limit hit. Retrying in ${delay}ms... (Attempt ${i + 1}/${retries})`);
-                        await new Promise(resolve => setTimeout(resolve, delay));
-                        continue;
-                    }
-                    throw err;
+        while (keysTried < apiKeys.length) {
+            const keyIndex = (currentKeyIndex + keysTried) % apiKeys.length;
+            const currentKey = apiKeys[keyIndex];
+            
+            console.log(`🚀 Using Gemini API Key #${keyIndex + 1} (Attempt ${keysTried + 1}/${apiKeys.length})`);
+
+            try {
+                const genAI = new GoogleGenerativeAI(currentKey);
+                const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+
+                // Internal retry for transient errors
+                const result = await model.generateContent([prompt, imagePart]);
+                const response = await result.response;
+                analysisText = response.text();
+
+                // If successful, update the starting key for the next request and break
+                saveRotationState(keyIndex);
+                break;
+            } catch (err) {
+                const isQuotaError = err.message.includes('429') || err.message.toLowerCase().includes('quota');
+                
+                if (isQuotaError) {
+                    console.warn(`🛑 Key #${keyIndex + 1} reached quota limit. Trying next key...`);
+                    keysTried++;
+                    continue;
                 }
+                // If it's a different error, throw it immediately
+                throw err;
             }
-        };
+        }
 
-        const text = await generateWithRetry();
-
-        // Clean up the text (Gemini sometimes adds markdown code blocks)
-        const jsonMatch = text.match(/\[[\s\S]*\]/);
-        const analysisResults = JSON.parse(jsonMatch ? jsonMatch[0] : text);
-
-        return res.json({
-            success: true,
-            analysis: analysisResults
-        });
-
-    } catch (error) {
-        console.error('AI Analysis Error:', error.message);
-
-        // Handle Quota/Rate Limit errors with a Mock Fallback for testing/demo
-        if (error.message.includes('429')) {
-            console.warn('AI Quota Exceeded. Returning MOCK analysis results for demo purposes.');
-
-            // Generate a plausible mock based on the first available material
-            const mockMaterial = availableMaterials && availableMaterials.length > 0 ? availableMaterials[0] : 'Mixed Scrap';
-            const mockResults = [
-                {
-                    "isMatch": true,
-                    "material": mockMaterial,
-                    "quality": "Standard",
-                    "reason": "Simulated match for testing when API quota is reached.",
-                    "confidence": 100
-                }
-            ];
-
-            return res.json({
-                success: true,
-                isMock: true,
-                message: 'AI Quota Exceeded. Showing simulated results.',
-                analysis: mockResults
+        if (!analysisText) {
+            // All keys failed with quota errors
+            return res.status(429).json({ 
+                success: false, 
+                message: 'All available AI capacity has been reached for today.',
+                errorCode: 'ALL_KEYS_EXHAUSTED'
             });
         }
 
-        res.status(500).json({
-            success: false,
-            message: 'AI Analysis Failed',
-            error: error.message
-        });
+        // Clean up and parse response
+        const jsonMatch = analysisText.match(/\[[\s\S]*\]/);
+        const analysisResults = JSON.parse(jsonMatch ? jsonMatch[0] : analysisText);
+
+        return res.json({ success: true, analysis: analysisResults });
+
+    } catch (error) {
+        console.error('AI Analysis Error:', error.message);
+        res.status(500).json({ success: false, message: 'AI Analysis Failed', error: error.message });
     } finally {
-        // ALWAYS delete the temporary file
         if (req.file && fs.existsSync(req.file.path)) {
-            try {
-                fs.unlinkSync(req.file.path);
-            } catch (err) {
-                console.error('Failed to delete temp file:', err.message);
-            }
+            try { fs.unlinkSync(req.file.path); } catch (err) { console.error('Failed to delete temp file:', err.message); }
         }
     }
 };
+
