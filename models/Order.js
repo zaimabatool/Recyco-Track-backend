@@ -31,6 +31,11 @@ const orderSchema = new mongoose.Schema({
         required: [true, 'Phone number is required'],
         trim: true
     },
+    address: {
+        type: String,
+        required: [true, 'Pickup address is required'],
+        trim: true
+    },
     materialName: {
         type: String,
         required: [true, 'Material name is required'],
