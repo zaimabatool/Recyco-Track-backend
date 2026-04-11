@@ -7,7 +7,7 @@ dotenv.config({ path: './backend/.env' });
 const createRider = async () => {
     try {
         await mongoose.connect(process.env.MONGO_URI);
-        
+
         // Check if rider already exists
         const existingRider = await User.findOne({ email: 'rider@recyco.com' });
         if (existingRider) {
@@ -24,6 +24,10 @@ const createRider = async () => {
             gender: 'Male',
             avatar: 'FaUserAlt'
         });
+
+
+
+
 
         console.log('--- RIDER CREATED ---');
         console.log('Email: rider@recyco.com');
